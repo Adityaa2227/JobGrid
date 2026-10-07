@@ -172,33 +172,60 @@ const processJobUrl = async (url, bot, options = {}) => {
         // Handle AI Rate Limit - Save for later instead of erroring
         if (extractedData && extractedData.error === 'rate_limit_exceeded') {
             console.log(`   ⚠️ Rate Limit Hit. Queuing job for later: ${scraped.title}`);
-            aiStatus = 'rate_limited';
+            const titleCompMatch = scraped.title ? scraped.title.match(/^([^|]+?)\s+(?:Off Campus|Hiring|Recruitment|Drive|Careers|Internship|Jobs|Job)/i) : null;
+            const fallbackComp = (scraped.company && scraped.company !== 'Unknown')
+                ? scraped.company
+                : (titleCompMatch && titleCompMatch[1] ? titleCompMatch[1].replace(/^(?:Direct|Urgent|Latest|New)\s+/i, '').trim() : 'Unknown');
+
+            const titleLocMatch = scraped.title ? scraped.title.match(/\|\s*([^|]+)$/) : null;
+            const fallbackLoc = scraped.location || (titleLocMatch && titleLocMatch[1] ? titleLocMatch[1].trim() : 'Remote');
+
+            const titleBatchMatches = scraped.title ? scraped.title.match(/\b(202[0-9]|203[0-9])\b/g) : null;
+            const fallbackBatch = (scraped.batch && scraped.batch.length > 0) ? scraped.batch : (titleBatchMatches ? Array.from(new Set(titleBatchMatches)) : []);
+
             extractedData = {
                 title: scraped.title,
-                company: scraped.company,
+                company: fallbackComp,
+                location: fallbackLoc,
+                salary: scraped.salary || 'Competitive',
                 applyUrl: scraped.applyUrl || url,
                 description: scraped.content, // Save full content in description for now
-                location: 'Pending AI',
                 jobType: 'FullTime',
                 roleType: 'Engineering',
                 seniority: 'Entry',
-                isRemote: false,
-                salary: 'Pending',
-                batch: [],
-                tags: []
+                isRemote: fallbackLoc.toLowerCase().includes('remote'),
+                batch: fallbackBatch,
+                tags: scraped.tags || []
             };
         } else if (!extractedData) {
             // Handle Parsing Error (JSON validation failed or other)
             console.log(`   ⚠️ AI Parsing Failed. Queuing job for later retry: ${scraped.title}`);
-            aiStatus = 'failed'; // Or 'rate_limited' to retry? Let's use 'failed' for now to detect issues.
-            // valid strategy: fallback to scraped data
+            aiStatus = 'failed';
+
+            const titleCompMatch = scraped.title ? scraped.title.match(/^([^|]+?)\s+(?:Off Campus|Hiring|Recruitment|Drive|Careers|Internship|Jobs|Job)/i) : null;
+            const fallbackComp = (scraped.company && scraped.company !== 'Unknown')
+                ? scraped.company
+                : (titleCompMatch && titleCompMatch[1] ? titleCompMatch[1].replace(/^(?:Direct|Urgent|Latest|New)\s+/i, '').trim() : 'Unknown');
+
+            const titleLocMatch = scraped.title ? scraped.title.match(/\|\s*([^|]+)$/) : null;
+            const fallbackLoc = scraped.location || (titleLocMatch && titleLocMatch[1] ? titleLocMatch[1].trim() : 'Remote');
+
+            const titleBatchMatches = scraped.title ? scraped.title.match(/\b(202[0-9]|203[0-9])\b/g) : null;
+            const fallbackBatch = (scraped.batch && scraped.batch.length > 0) ? scraped.batch : (titleBatchMatches ? Array.from(new Set(titleBatchMatches)) : []);
+
             extractedData = {
                 title: scraped.title,
-                company: scraped.company || 'Unknown',
+                company: fallbackComp,
+                location: fallbackLoc,
+                salary: scraped.salary || 'Competitive',
                 applyUrl: scraped.applyUrl || url,
                 description: scraped.content,
-                tags: [],
-                batch: []
+                jobType: 'FullTime',
+                roleType: 'Engineering',
+                seniority: 'Entry',
+                isRemote: fallbackLoc.toLowerCase().includes('remote'),
+                batch: fallbackBatch,
+                tags: scraped.tags || []
             };
         }
 

@@ -12,6 +12,26 @@ export default function JobHeader({ job }: JobHeaderProps) {
     const isFresh = new Date().getTime() - new Date(job.createdAt).getTime() < 4 * 60 * 60 * 1000;
     const isNew = new Date().getTime() - new Date(job.createdAt).getTime() < 24 * 60 * 60 * 1000;
 
+    const displayCompany = (() => {
+        if (job.company && job.company !== 'Unknown') return job.company;
+        const match = job.title.match(/^([^|]+?)\s+(?:Off Campus|Hiring|Recruitment|Drive|Careers|Internship|Jobs|Job)/i);
+        if (match && match[1]) {
+            return match[1].replace(/^(?:Direct|Urgent|Latest|New)\s+/i, '').trim();
+        }
+        return job.company || 'Company';
+    })();
+
+    const displayLocation = (() => {
+        if (job.location && job.location !== 'Not specified' && job.location !== 'Pending' && job.location !== 'Pending AI') {
+            return job.location;
+        }
+        const match = job.title.match(/\|\s*([^|]+)$/);
+        if (match && match[1]) return match[1].trim();
+        return 'Not specified';
+    })();
+
+    const displaySalary = (job.salary && job.salary !== 'Pending') ? job.salary : 'Competitive';
+
     return (
         <div className="bg-zinc-900/80 backdrop-blur-xl border border-zinc-800 rounded-[2rem] overflow-hidden">
             {/* Gold accent */}
@@ -26,15 +46,15 @@ export default function JobHeader({ job }: JobHeaderProps) {
                             {job.companyLogo ? (
                                 <img
                                     src={job.companyLogo}
-                                    alt={job.company}
+                                    alt={displayCompany}
                                     className="w-full h-full object-cover"
                                     onError={(e) => {
                                         (e.target as HTMLImageElement).style.display = 'none';
-                                        (e.target as HTMLImageElement).parentElement!.innerHTML = `<span class="text-3xl font-black text-amber-400">${job.company.charAt(0)}</span>`;
+                                        (e.target as HTMLImageElement).parentElement!.innerHTML = `<span class="text-3xl font-black text-amber-400">${displayCompany.charAt(0)}</span>`;
                                     }}
                                 />
                             ) : (
-                                job.company.charAt(0)
+                                displayCompany.charAt(0)
                             )}
                         </div>
                         {isFresh && (
@@ -81,7 +101,7 @@ export default function JobHeader({ job }: JobHeaderProps) {
                         <div className="flex items-center gap-4">
                             <div className="flex items-center gap-2 text-zinc-400">
                                 <Building2 className="w-5 h-5" />
-                                <span className="font-bold text-lg">{job.company}</span>
+                                <span className="font-bold text-lg">{displayCompany}</span>
                             </div>
                             <span className="text-zinc-700">•</span>
                             <span className="flex items-center gap-1.5 text-zinc-500 text-sm font-medium">
@@ -99,13 +119,13 @@ export default function JobHeader({ job }: JobHeaderProps) {
                     <StatCard
                         icon={MapPin}
                         label="Location"
-                        value={job.location || 'Not specified'}
+                        value={displayLocation}
                         color="amber"
                     />
                     <StatCard
                         icon={Banknote}
                         label="Salary"
-                        value={job.salary || 'Competitive'}
+                        value={displaySalary}
                         color="green"
                     />
                     <StatCard

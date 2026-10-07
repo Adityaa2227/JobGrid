@@ -29,9 +29,77 @@ const processFeedItem = async (item, bot, bundler) => {
 
         const img = $('img').first().attr('src');
 
+        // Extract Schema.org JobPosting JSON-LD if present
+        let schemaData = {};
+        $('script[type="application/ld+json"]').each((i, el) => {
+            try {
+                const parsed = JSON.parse($(el).html());
+                if (parsed['@type'] === 'JobPosting') {
+                    schemaData = parsed;
+                } else if (Array.isArray(parsed)) {
+                    const jp = parsed.find(p => p['@type'] === 'JobPosting');
+                    if (jp) schemaData = jp;
+                }
+            } catch (e) {}
+        });
+
+        // 1. Company extraction (from JSON-LD or title)
+        let extractedCompany = '';
+        if (schemaData.hiringOrganization?.name && schemaData.hiringOrganization.name !== 'Unknown') {
+            extractedCompany = schemaData.hiringOrganization.name;
+        } else {
+            const compMatch = item.title.match(/^([^|]+?)\s+(?:Off Campus|Hiring|Recruitment|Drive|Careers|Internship|Jobs|Job)/i);
+            if (compMatch && compMatch[1]) {
+                extractedCompany = compMatch[1].replace(/^(?:Direct|Urgent|Latest|New)\s+/i, '').trim();
+            }
+        }
+
+        // 2. Location extraction (from JSON-LD or title)
+        let extractedLocation = schemaData.jobLocation?.address?.addressLocality || '';
+        if (!extractedLocation) {
+            const locMatch = item.title.match(/\|\s*([^|]+)$/);
+            if (locMatch && locMatch[1]) {
+                extractedLocation = locMatch[1].trim();
+            }
+        }
+
+        // 3. Salary extraction (from JSON-LD if present)
+        let extractedSalary = '';
+        if (schemaData.baseSalary?.value?.minValue && schemaData.baseSalary?.value?.maxValue) {
+            const min = (schemaData.baseSalary.value.minValue / 100000).toFixed(1).replace('.0', '');
+            const max = (schemaData.baseSalary.value.maxValue / 100000).toFixed(1).replace('.0', '');
+            extractedSalary = `₹${min} - ${max} LPA`;
+        } else if (schemaData.baseSalary?.value?.value) {
+            const val = (schemaData.baseSalary.value.value / 100000).toFixed(1).replace('.0', '');
+            extractedSalary = `₹${val} LPA`;
+        }
+
+        // 4. Batch extraction from title
+        const batchMatches = item.title.match(/\b(202[0-9]|203[0-9])\b/g);
+        const extractedBatch = batchMatches ? Array.from(new Set(batchMatches)) : [];
+
+        // 5. Clean promotional spam, scripts, and tracking from description
+        $('script').remove();
+        $('a[href*="whatsapp"], a[href*="telegram"], a[href*="instagram"]').closest('p').remove();
+        $('p, h6, div').filter((i, el) => {
+            const t = $(el).text();
+            return /Instant Job Updates|Official WhatsApp|Official Telegram|Official Instagram|Apply Link\s*:|How To Apply/i.test(t);
+        }).remove();
+        $('figure.wp-block-image').remove();
+        $('p').each((i, el) => {
+            if (!$(el).text().trim() && $(el).children().length === 0) {
+                $(el).remove();
+            }
+        });
+        const cleanContent = $('body').html() || $.html();
+
         return await processJobUrl(url, bot, {
-            content: item.content,
+            content: cleanContent,
             title: item.title,
+            company: extractedCompany,
+            location: extractedLocation,
+            salary: extractedSalary,
+            batch: extractedBatch,
             applyUrl: applyUrl,
             companyLogo: img,
             bundler // Pass bundler to processJobUrl

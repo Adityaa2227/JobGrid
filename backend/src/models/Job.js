@@ -41,7 +41,6 @@ const JobSchema = new mongoose.Schema({
   isFeatured: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
   reportCount: { type: Number, default: 0 },
-  reportCount: { type: Number, default: 0 },
   telegramMessageId: { type: Number }, // Deprecated, but keep for backward compatibility
   telegramMessages: [{
     chatId: { type: String },

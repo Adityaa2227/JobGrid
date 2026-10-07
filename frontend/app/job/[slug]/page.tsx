@@ -15,30 +15,36 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     try {
         const { slug } = await params;
         const job = await getJobBySlug(slug);
+        const comp = (job.company && job.company !== 'Unknown')
+            ? job.company
+            : (job.title.match(/^([^|]+?)\s+(?:Off Campus|Hiring|Recruitment|Drive|Careers|Internship|Jobs|Job)/i)?.[1]?.replace(/^(?:Direct|Urgent|Latest|New)\s+/i, '').trim() || job.company || 'Company');
+        const loc = job.location || (job.title.match(/\|\s*([^|]+)$/)?.[1]?.trim() || 'Remote');
+        const sal = job.salary || 'Competitive';
+
         return {
-            title: `${job.title} at ${job.company} | JobGrid`,
-            description: `${job.title} job opening at ${job.company}. Location: ${job.location}. Salary: ${job.salary}. Apply now!`,
+            title: `${job.title} at ${comp} | JobGrid`,
+            description: `${job.title} job opening at ${comp}. Location: ${loc}. Salary: ${sal}. Apply now!`,
             alternates: {
                 canonical: `/job/${slug}`,
             },
             openGraph: {
-                title: `${job.title} at ${job.company}`,
-                description: `${job.title} job opening at ${job.company}. Apply now!`,
+                title: `${job.title} at ${comp}`,
+                description: `${job.title} job opening at ${comp}. Apply now!`,
                 type: 'article',
                 images: [
                     {
-                        url: `/api/og?title=${encodeURIComponent(job.title)}&company=${encodeURIComponent(job.company)}&location=${encodeURIComponent(job.location || 'Remote')}&salary=${encodeURIComponent(job.salary || 'Competitive')}&batch=${encodeURIComponent(job.batch?.[0] || '')}`,
+                        url: `/api/og?title=${encodeURIComponent(job.title)}&company=${encodeURIComponent(comp)}&location=${encodeURIComponent(loc)}&salary=${encodeURIComponent(sal)}&batch=${encodeURIComponent(job.batch?.[0] || '')}`,
                         width: 1200,
                         height: 630,
-                        alt: `${job.title} at ${job.company}`,
+                        alt: `${job.title} at ${comp}`,
                     },
                 ],
             },
             twitter: {
                 card: 'summary_large_image',
-                title: `${job.title} at ${job.company}`,
-                description: `${job.title} job opening at ${job.company}. Apply now!`,
-                images: [`/api/og?title=${encodeURIComponent(job.title)}&company=${encodeURIComponent(job.company)}&location=${encodeURIComponent(job.location || 'Remote')}&salary=${encodeURIComponent(job.salary || 'Competitive')}&batch=${encodeURIComponent(job.batch?.[0] || '')}`],
+                title: `${job.title} at ${comp}`,
+                description: `${job.title} job opening at ${comp}. Apply now!`,
+                images: [`/api/og?title=${encodeURIComponent(job.title)}&company=${encodeURIComponent(comp)}&location=${encodeURIComponent(loc)}&salary=${encodeURIComponent(sal)}&batch=${encodeURIComponent(job.batch?.[0] || '')}`],
             },
         };
     } catch {
@@ -71,6 +77,10 @@ export default async function JobDetail({ params }: { params: Promise<{ slug: st
     const hoursAgo = Math.floor((new Date().getTime() - new Date(job.createdAt).getTime()) / (1000 * 60 * 60));
     const isFresh = hoursAgo < 24;
 
+    const displayCompany = (job.company && job.company !== 'Unknown')
+        ? job.company
+        : (job.title.match(/^([^|]+?)\s+(?:Off Campus|Hiring|Recruitment|Drive|Careers|Internship|Jobs|Job)/i)?.[1]?.replace(/^(?:Direct|Urgent|Latest|New)\s+/i, '').trim() || job.company || 'Company');
+
     return (
         <main className="min-h-screen bg-black relative overflow-hidden">
             <JobSchema job={job} />
@@ -95,7 +105,7 @@ export default async function JobDetail({ params }: { params: Promise<{ slug: st
                                 All Jobs
                             </Link>
                             <span className="text-zinc-700">/</span>
-                            <span className="text-zinc-500 text-sm truncate max-w-[200px]">{job.company}</span>
+                            <span className="text-zinc-500 text-sm truncate max-w-[200px]">{displayCompany}</span>
                         </div>
 
                         {/* Quick Stats */}

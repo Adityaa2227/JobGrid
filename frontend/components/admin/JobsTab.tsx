@@ -1,11 +1,11 @@
-"use client";
-
-import { Briefcase } from 'lucide-react';
+import { Briefcase, Wrench, Plus, RefreshCw } from 'lucide-react';
 import { Job, AdminAnalytics } from '@/types';
 import { useState } from 'react';
 import JobStats from './jobs/JobStats';
 import JobFilterBar from './jobs/JobFilterBar';
 import JobTable from './jobs/JobTable';
+import JobEditor from './JobEditor';
+import { toast } from 'react-hot-toast';
 
 interface JobsTabProps {
     jobs: Job[];
@@ -16,14 +16,18 @@ interface JobsTabProps {
     deleteJob: (id: string) => void;
     clearAllJobs: () => void;
     clearReportedJobs: () => void;
+    onRefresh?: () => void;
 }
 
 export default function JobsTab({
     jobs, analytics, jobFilter, setJobFilter,
-    toggleJobStatus, deleteJob, clearAllJobs, clearReportedJobs
+    toggleJobStatus, deleteJob, clearAllJobs, clearReportedJobs, onRefresh
 }: JobsTabProps) {
     const [selectedJobIds, setSelectedJobIds] = useState<string[]>([]);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [isRepairing, setIsRepairing] = useState(false);
+    const [editingJob, setEditingJob] = useState<Job | null>(null);
+    const [isCreatingJob, setIsCreatingJob] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
     const reportedJobs = jobs.filter(j => (j.reportCount || 0) > 0);
@@ -62,39 +66,84 @@ export default function JobsTab({
             const data = await res.json();
 
             if (res.ok) {
-                // Remove deleted jobs from local state (we can't easily update parent 'jobs' prop without a callback, 
-                // but we can force a refresh if the parent passed one, or just wait for the next poll)
-                // For now, let's assume the parent polling will catch it, but we should clear selection
                 setSelectedJobIds([]);
-                // Trigger a refresh would be ideal, but we don't have a refresh prop. 
-                // We'll rely on the parent's polling, but clearing selection is key.
-                alert(data.message);
+                toast.success(data.message || 'Jobs deleted successfully');
+                if (onRefresh) onRefresh();
             } else {
-                alert(data.error || 'Failed to delete jobs');
+                toast.error(data.error || 'Failed to delete jobs');
             }
         } catch (err) {
             console.error('Bulk delete failed', err);
-            alert('Failed to delete jobs');
+            toast.error('Failed to delete jobs');
         } finally {
             setIsDeleting(false);
         }
     };
 
+    const handleRepairAll = async () => {
+        if (!confirm('Re-parse and repair all jobs with "Unknown" company, missing location, or failed status using AI & schema?')) return;
+
+        setIsRepairing(true);
+        toast.loading('Repairing jobs with AI & title extractor...', { id: 'repair-toast' });
+        try {
+            const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://jobgrid-in.onrender.com';
+            const res = await fetch(`${BACKEND_URL}/api/admin/jobs/repair-all`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                toast.success(data.message || `Repaired ${data.repairedCount} jobs!`, { id: 'repair-toast' });
+                if (onRefresh) onRefresh();
+            } else {
+                toast.error(data.error || 'Failed to repair jobs', { id: 'repair-toast' });
+            }
+        } catch (err: any) {
+            console.error('Repair failed', err);
+            toast.error('Failed to repair jobs: ' + err.message, { id: 'repair-toast' });
+        } finally {
+            setIsRepairing(false);
+        }
+    };
+
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Header */}
-            <div>
-                <h2 className="text-3xl font-black text-white mb-2 tracking-tight flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
-                        <Briefcase className="w-6 h-6 text-white" />
-                    </div>
-                    Job Control Center
-                </h2>
-                <p className="text-zinc-500 font-medium">Manage listings, monitor engagement, and handle reports.</p>
+            {/* Header with Quick Action Buttons */}
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                    <h2 className="text-3xl font-black text-white mb-2 tracking-tight flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
+                            <Briefcase className="w-6 h-6 text-white" />
+                        </div>
+                        Job Control Center
+                    </h2>
+                    <p className="text-zinc-500 font-medium">Manage listings, monitor engagement, and handle reports.</p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleRepairAll}
+                        disabled={isRepairing}
+                        className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/20 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 active:scale-95"
+                        title="Automatically repair jobs with 'Unknown' company or missing data"
+                    >
+                        <Wrench className={`w-4 h-4 ${isRepairing ? 'animate-spin' : ''}`} />
+                        {isRepairing ? 'Repairing...' : 'Repair & Fix Unknown Jobs'}
+                    </button>
+
+                    <button
+                        onClick={() => setIsCreatingJob(true)}
+                        className="px-5 py-2.5 bg-white hover:bg-zinc-200 text-black font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 hover:scale-105 active:scale-95"
+                    >
+                        <Plus className="w-4 h-4" />
+                        Add Job
+                    </button>
+                </div>
             </div>
 
             <JobStats
-                totalJobs={jobs.length}
+                totalJobs={analytics.totalJobs || jobs.length}
                 reportedCount={reportedJobs.length}
                 analytics={analytics}
             />
@@ -121,7 +170,24 @@ export default function JobsTab({
                 selectedJobIds={selectedJobIds}
                 toggleSelection={toggleSelection}
                 toggleAll={toggleAll}
+                onEditJob={(job) => setEditingJob(job)}
             />
+
+            {/* Edit / Create Modal */}
+            {(editingJob || isCreatingJob) && (
+                <JobEditor
+                    job={editingJob || undefined}
+                    onClose={() => {
+                        setEditingJob(null);
+                        setIsCreatingJob(false);
+                    }}
+                    onSave={() => {
+                        setEditingJob(null);
+                        setIsCreatingJob(false);
+                        if (onRefresh) onRefresh();
+                    }}
+                />
+            )}
         </div>
     );
 }

@@ -262,7 +262,7 @@ router.post('/settings', async (req, res) => {
 router.get('/dashboard-stats', async (req, res) => {
     try {
         const totalJobs = await Job.countDocuments({ isActive: true });
-        const totalUsers = await Job.aggregate([{ $group: { _id: "$company", count: { $sum: 1 } } }]).then(res => res.length); // Proxy for companies
+        const totalUsers = await User.countDocuments({});
         const activeAlerts = await ScheduledJob.countDocuments({ status: 'pending' });
         
         // Cleanup Stats
@@ -327,7 +327,7 @@ router.get('/dashboard-stats', async (req, res) => {
 
         res.json({
             totalJobs,
-            totalUsers: mau, // Use actual total users count here
+            totalUsers,
             activeAlerts,
             revenue,
             expiredJobs,
@@ -469,6 +469,147 @@ router.put('/jobs/:id/toggle', async (req, res) => {
         await AuditLog.log('JOB_STATUS_TOGGLED', 'job', { targetId: job._id, title: job.title, isActive: job.isActive });
 
         res.json({ success: true, isActive: job.isActive });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Create new job
+router.post('/jobs', async (req, res) => {
+    try {
+        const job = new Job(req.body);
+        await job.save();
+        const AuditLog = require('../models/AuditLog');
+        await AuditLog.log('JOB_CREATED', 'job', { targetId: job._id, title: job.title, company: job.company });
+        res.status(201).json(job);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update specific job
+router.put('/jobs/:id', async (req, res) => {
+    try {
+        const job = await Job.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!job) return res.status(404).json({ error: 'Job not found' });
+        const AuditLog = require('../models/AuditLog');
+        await AuditLog.log('JOB_UPDATED', 'job', { targetId: job._id, title: job.title, company: job.company });
+        res.json(job);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Bulk delete jobs
+router.post('/jobs/bulk-delete', async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'Array of job IDs is required' });
+        }
+        const result = await Job.deleteMany({ _id: { $in: ids } });
+        const AuditLog = require('../models/AuditLog');
+        await AuditLog.log('JOBS_BULK_DELETED', 'job', { count: result.deletedCount, ids });
+        res.json({ success: true, message: `Successfully deleted ${result.deletedCount} jobs`, count: result.deletedCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Repair & Re-parse all Unknown / Failed jobs
+router.post('/jobs/repair-all', async (req, res) => {
+    try {
+        const { parseJobWithAI } = require('../services/groq');
+        const jobs = await Job.find({
+            $or: [
+                { company: 'Unknown' },
+                { company: '' },
+                { aiStatus: 'failed' },
+                { location: '' },
+                { location: 'Pending AI' },
+                { location: 'Not specified' }
+            ]
+        });
+
+        let repairedCount = 0;
+
+        for (const job of jobs) {
+            try {
+                // 1. Title matching for company
+                let comp = job.company && job.company !== 'Unknown' ? job.company : '';
+                if (!comp) {
+                    const compMatch = job.title.match(/^([^|]+?)\s+(?:Off Campus|Hiring|Recruitment|Drive|Careers|Internship|Jobs|Job)/i);
+                    if (compMatch && compMatch[1]) {
+                        comp = compMatch[1].replace(/^(?:Direct|Urgent|Latest|New)\s+/i, '').trim();
+                    }
+                }
+
+                // 2. Location matching from title
+                let loc = job.location && !['Pending AI', 'Pending', 'Not specified', ''].includes(job.location) ? job.location : '';
+                if (!loc) {
+                    const locMatch = job.title.match(/\|\s*([^|]+)$/);
+                    if (locMatch && locMatch[1]) loc = locMatch[1].trim();
+                }
+
+                // 3. Batch matching from title
+                let batch = job.batch && job.batch.length > 0 ? job.batch : [];
+                if (batch.length === 0) {
+                    const batchMatches = job.title.match(/\b(202[0-9]|203[0-9])\b/g);
+                    if (batchMatches) batch = Array.from(new Set(batchMatches));
+                }
+
+                // 4. Clean description
+                let cleanDesc = job.description || '';
+                cleanDesc = cleanDesc.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+                cleanDesc = cleanDesc.replace(/<p[^>]*>(?:<strong>)?(?:Instant Job Updates|Join our Official|Join Official|Official WhatsApp|Official Telegram|Official Instagram|Apply Link\s*:|How To Apply)[^<]*(?:<a[^>]*>[^<]*<\/a>)?[^<]*<\/p>/gi, '');
+                cleanDesc = cleanDesc.replace(/(?:Instant Job Updates|Join our Official WhatsApp|Join our Official Telegram|Join our Official Instagram|Apply Link\s*:|How To Apply)[^\n]+/gi, '');
+                cleanDesc = cleanDesc.replace(/<figure[^>]*>.*?<\/figure>/gis, '');
+                cleanDesc = cleanDesc.replace(/<p[^>]*>\s*<\/p>/gi, '').trim();
+
+                // 5. Try AI re-parse for rich fields
+                let aiData = null;
+                try {
+                    const snippet = `Title: ${job.title}\nCompany: ${comp || 'Unknown'}\nLocation: ${loc}\n${cleanDesc.substring(0, 2000)}`;
+                    aiData = await parseJobWithAI(snippet);
+                } catch (e) {
+                    console.warn(`Repair AI parse failed for ${job.title}:`, e.message);
+                }
+
+                if (aiData && !aiData.error) {
+                    if (aiData.company && aiData.company !== 'Unknown') comp = aiData.company;
+                    if (aiData.location && !loc) loc = aiData.location;
+                    if (aiData.salary && (!job.salary || job.salary === 'Pending' || job.salary === 'Competitive')) job.salary = aiData.salary;
+                    if (aiData.eligibility && !job.eligibility) job.eligibility = aiData.eligibility;
+                    if (aiData.rolesResponsibility && Array.isArray(aiData.rolesResponsibility)) {
+                        job.rolesResponsibility = aiData.rolesResponsibility.join('\n');
+                    }
+                    if (aiData.requirements && Array.isArray(aiData.requirements)) {
+                        job.requirements = aiData.requirements.join('\n');
+                    }
+                    if (aiData.tags && Array.isArray(aiData.tags) && aiData.tags.length > 0) {
+                        job.tags = aiData.tags;
+                    }
+                    if (aiData.batch && Array.isArray(aiData.batch) && aiData.batch.length > 0) {
+                        batch = Array.from(new Set([...batch, ...aiData.batch]));
+                    }
+                    job.aiStatus = 'completed';
+                }
+
+                if (comp) job.company = comp;
+                if (loc) job.location = loc;
+                if (!job.salary || job.salary === 'Pending') job.salary = 'Competitive';
+                job.batch = batch;
+                job.description = cleanDesc;
+                if (job.location?.toLowerCase().includes('remote')) job.isRemote = true;
+
+                await job.save();
+                repairedCount++;
+            } catch (jobErr) {
+                console.error(`Failed to repair job ${job._id}:`, jobErr);
+            }
+        }
+
+        res.json({ success: true, message: `Successfully repaired ${repairedCount} jobs!`, repairedCount });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

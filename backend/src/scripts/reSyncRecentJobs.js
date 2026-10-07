@@ -64,4 +64,5 @@ async function reSyncRecentJobs(limit = 2) {
     }
 }
 
-reSyncRecentJobs(2);
+const limitArg = parseInt(process.argv[2]) || 20;
+reSyncRecentJobs(limitArg);

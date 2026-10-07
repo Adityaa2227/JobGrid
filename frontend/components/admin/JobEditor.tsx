@@ -39,10 +39,23 @@ interface JobEditorProps {
 }
 
 export default function JobEditor({ job, onClose, onSave }: JobEditorProps) {
+    const prefillCompany = (() => {
+        if (job?.company && job.company !== 'Unknown') return job.company;
+        const match = (job?.title || '').match(/^([^|]+?)\s+(?:Off Campus|Hiring|Recruitment|Drive|Careers|Internship|Jobs|Job)/i);
+        if (match && match[1]) return match[1].replace(/^(?:Direct|Urgent|Latest|New)\s+/i, '').trim();
+        return job?.company || '';
+    })();
+
+    const prefillLocation = (() => {
+        if (job?.location && !['Not specified', 'Pending', 'Pending AI', ''].includes(job.location)) return job.location;
+        const match = (job?.title || '').match(/\|\s*([^|]+)$/);
+        return match && match[1] ? match[1].trim() : (job?.location || '');
+    })();
+
     const [form, setForm] = useState<JobFormData>(job ? {
         title: job.title || '',
-        company: job.company || '',
-        location: job.location || '',
+        company: prefillCompany,
+        location: prefillLocation,
         salary: job.salary || '',
         description: job.description || '',
         applyUrl: job.applyUrl || '',
@@ -54,7 +67,7 @@ export default function JobEditor({ job, onClose, onSave }: JobEditorProps) {
     } : INITIAL_FORM);
     const [saving, setSaving] = useState(false);
 
-    const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://jobgrid-in.onrender.com';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

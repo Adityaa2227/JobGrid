@@ -52,6 +52,33 @@ const finalizeJobData = async (refinedData, rawData = {}) => {
         return String(sal).trim();
     };
 
+    // Helper to extract company name from title
+    const extractCompanyFromTitle = (title) => {
+        if (!title) return '';
+        const match = title.match(/^([^|]+?)\s+(?:Off Campus|Hiring|Recruitment|Drive|Careers|Internship|Jobs|Job)/i);
+        if (match && match[1]) {
+            const cleaned = match[1].replace(/^(?:Direct|Urgent|Latest|New)\s+/i, '').trim();
+            if (cleaned) return cleaned;
+        }
+        return '';
+    };
+
+    // Helper to clean raw HTML / promotional spam from description
+    const cleanDescription = (desc) => {
+        if (!desc) return '';
+        let d = String(desc);
+        // Remove script tags and contents
+        d = d.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+        // Remove promotional lines & WhatsApp/Telegram groups
+        d = d.replace(/<p[^>]*>(?:<strong>)?(?:Instant Job Updates|Join our Official|Join Official|Official WhatsApp|Official Telegram|Official Instagram|Apply Link\s*:|How To Apply)[^<]*(?:<a[^>]*>[^<]*<\/a>)?[^<]*<\/p>/gi, '');
+        d = d.replace(/(?:Instant Job Updates|Join our Official WhatsApp|Join our Official Telegram|Join our Official Instagram|Apply Link\s*:|How To Apply)[^\n]+/gi, '');
+        // Remove wp-block-image figures
+        d = d.replace(/<figure[^>]*>.*?<\/figure>/gis, '');
+        // Remove empty paragraphs
+        d = d.replace(/<p[^>]*>\s*<\/p>/gi, '');
+        return d.trim();
+    };
+
     // Helper to simple string (roleType, etc)
     const cleanString = (val, defaultVal = '') => {
         if (!val) return defaultVal;
@@ -59,14 +86,30 @@ const finalizeJobData = async (refinedData, rawData = {}) => {
         return val.name || val.title || val.label || JSON.stringify(val);
     };
 
+    const finalCompany = (() => {
+        const c = (refinedData.company && refinedData.company !== 'Unknown') 
+            ? refinedData.company 
+            : ((rawData.company && rawData.company !== 'Unknown') ? rawData.company : '');
+        if (c) return c;
+        const fromTitle = extractCompanyFromTitle(rawData.title || refinedData.title);
+        return fromTitle || 'Unknown';
+    })();
+
+    const finalLocation = (() => {
+        const l = cleanLocation(refinedData.location || rawData.location);
+        if (l && l !== 'Not Specified' && l !== 'Pending' && l !== 'Pending AI') return l;
+        const locMatch = (rawData.title || '').match(/\|\s*([^|]+)$/);
+        return (locMatch && locMatch[1]) ? locMatch[1].trim() : (l || 'Remote');
+    })();
+
     return {
         title: refinedData.title || cleanTitle(rawData.title),
-        company: refinedData.company || rawData.company || 'Unknown',
+        company: finalCompany,
         companyLogo: refinedData.companyLogo || rawData.companyLogo,
-        location: cleanLocation(refinedData.location || rawData.location),
+        location: finalLocation,
         eligibility: refinedData.eligibility || rawData.eligibility || '',
-        salary: cleanSalary(refinedData.salary || rawData.salary),
-        description: refinedData.description || rawData.description || '',
+        salary: cleanSalary(refinedData.salary || rawData.salary) || 'Competitive',
+        description: cleanDescription(refinedData.description || rawData.description || ''),
         // Prioritize raw captured link as AI often hallucinations hub links
         applyUrl: rawData.applyUrl || refinedData.applyUrl || '',
         category: cleanCategory(refinedData.category || rawData.category),

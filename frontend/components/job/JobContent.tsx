@@ -52,9 +52,30 @@ export default function JobContent({ job }: JobContentProps) {
                         iconColor="from-amber-500 to-yellow-500"
                         title="Job Description"
                     >
-                        <div className="text-zinc-300 leading-relaxed whitespace-pre-wrap text-lg md:text-xl font-medium">
-                            {job.description}
-                        </div>
+                        {/<\/?[a-z][\s\S]*>/i.test(job.description || '') ? (
+                            <div
+                                className="job-description text-zinc-300 leading-relaxed text-base md:text-lg font-normal space-y-4 [&>h1]:text-2xl [&>h1]:font-black [&>h1]:text-white [&>h1]:mt-6 [&>h1]:mb-3 [&>h2]:text-xl [&>h2]:font-black [&>h2]:text-white [&>h2]:mt-6 [&>h2]:mb-3 [&>h3]:text-lg [&>h3]:font-black [&>h3]:text-white [&>h3]:mt-6 [&>h3]:mb-3 [&>h4]:text-base [&>h4]:font-bold [&>h4]:text-white [&>h4]:mt-4 [&>h4]:mb-2 [&>h6]:text-base [&>h6]:font-bold [&>h6]:text-white [&>h6]:mt-6 [&>h6]:mb-2 [&>ul]:list-disc [&>ul]:pl-6 [&>ul]:space-y-2 [&>ul]:my-4 [&>ol]:list-decimal [&>ol]:pl-6 [&>ol]:space-y-2 [&>ol]:my-4 [&>li]:text-zinc-300 [&>p]:mb-3 [&>p]:leading-relaxed [&>strong]:text-white [&>strong]:font-bold [&>a]:text-amber-400 [&>a]:hover:underline"
+                                dangerouslySetInnerHTML={{
+                                    __html: (() => {
+                                        let clean = job.description || '';
+                                        // Remove script tags and their contents
+                                        clean = clean.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+                                        clean = clean.replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '');
+                                        clean = clean.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+                                        // Remove promotional links, WhatsApp/Telegram/Instagram invite paragraphs
+                                        clean = clean.replace(/<p[^>]*>(?:<strong>)?(?:Instant Job Updates|Join our Official|Join Official|Official WhatsApp|Official Telegram|Official Instagram|Apply Link\s*:|How To Apply)[^<]*(?:<a[^>]*>[^<]*<\/a>)?[^<]*<\/p>/gi, '');
+                                        clean = clean.replace(/<a[^>]*href=["'][^"']*(?:whatsapp|telegram|instagram)[^"']*["'][^>]*>.*?<\/a>/gi, '');
+                                        clean = clean.replace(/<figure[^>]*>.*?<\/figure>/gis, '');
+                                        clean = clean.replace(/<p[^>]*>\s*<\/p>/gi, '');
+                                        return clean.trim();
+                                    })()
+                                }}
+                            />
+                        ) : (
+                            <div className="text-zinc-300 leading-relaxed whitespace-pre-wrap text-base md:text-lg font-medium">
+                                {job.description}
+                            </div>
+                        )}
                     </ContentSection>
 
                     {job.rolesResponsibility && (
@@ -94,18 +115,20 @@ export default function JobContent({ job }: JobContentProps) {
                     )}
 
                     {/* Eligibility */}
-                    <div className="pt-8 border-t border-zinc-800/50">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-green-500/20">
-                                <CheckCircle2 className="w-6 h-6 text-white" />
+                    {job.eligibility && job.eligibility.trim().length > 0 && (
+                        <div className="pt-8 border-t border-zinc-800/50">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center shadow-lg shadow-green-500/20">
+                                    <CheckCircle2 className="w-6 h-6 text-white" />
+                                </div>
+                                <h2 className="text-2xl font-black text-white">Eligibility Criteria</h2>
                             </div>
-                            <h2 className="text-2xl font-black text-white">Eligibility Criteria</h2>
+                            <div className="p-6 rounded-3xl bg-green-500/5 border border-green-500/20 flex items-start gap-4">
+                                <ChevronRight className="w-6 h-6 text-green-400 mt-0.5 flex-shrink-0" />
+                                <p className="text-zinc-200 text-lg font-bold">{job.eligibility}</p>
+                            </div>
                         </div>
-                        <div className="p-6 rounded-3xl bg-green-500/5 border border-green-500/20 flex items-start gap-4">
-                            <ChevronRight className="w-6 h-6 text-green-400 mt-0.5 flex-shrink-0" />
-                            <p className="text-zinc-200 text-lg font-bold">{job.eligibility}</p>
-                        </div>
-                    </div>
+                    )}
 
                     {/* Tech Stack Tags */}
                     {job.tags && job.tags.length > 0 && (

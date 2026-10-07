@@ -269,6 +269,7 @@ export default function AdminDashboard() {
                             deleteJob={deleteJob}
                             clearAllJobs={clearAllJobs}
                             clearReportedJobs={clearReportedJobs}
+                            onRefresh={fetchData}
                         />
                     )}
 
